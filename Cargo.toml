@@ -1,6 +1,0 @@
-[package]
-name = "apeing-dex-takehome"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
