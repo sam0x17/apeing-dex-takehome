@@ -33,11 +33,12 @@ pnpm install
 pnpm dev        # http://localhost:3000
 ```
 
-Other commands: `pnpm test` (vitest, 51 tests), `pnpm typecheck`, `pnpm lint`,
-`pnpm build`. CI runs all four on every push/PR.
+Other commands: `pnpm test` (vitest, 51 unit tests), `pnpm test:e2e` (Playwright,
+8 fork-based e2e tests — see [Testing](#testing)), `pnpm typecheck`, `pnpm lint`,
+`pnpm build`. CI runs all five on every push/PR.
 
 You need an injected EOA wallet (MetaMask) with a little USDC + ETH on Arbitrum to
-exercise the bridge end-to-end.
+exercise the bridge end-to-end yourself.
 
 ### Env vars
 
@@ -48,6 +49,43 @@ NEXT_PUBLIC_ARBITRUM_RPC=       # optional, source-chain balance reads
 ```
 
 All have working defaults; the app runs with no `.env` at all. See `.env.example`.
+
+## Testing
+
+Two layers, no mocks inside the app:
+
+**Unit (vitest, 51 tests)** — every pure function in `src/lib/`: pricing-guard
+boundaries, bridge-lifecycle derivation (incl. "steps claim DONE but destination
+pending must not be done"), approval-plan idempotence, V2 order math (integer-exact
+amounts, tick/min-size validation), quote summarization, book parsing.
+
+**E2E (Playwright, 8 tests)** — there is no usable testnet for this stack (Li.Fi
+is mainnet-only, Polymarket has no public testnet CLOB, pUSD exists only on
+Polygon mainnet), so the suite runs the real app against **anvil mainnet forks**
+of Polygon + Arbitrum with real read-only Li.Fi / CLOB APIs:
+
+- `e2e/global-setup.ts` spawns both forks and seeds the test EOA (pUSD by
+  impersonating the ConditionalTokens escrow — pUSD uses namespaced storage, so
+  the usual balance-slot trick can't; USDC via storage-slot search).
+- An injected EIP-1193 test wallet (`e2e/helpers/wallet-init.ts`) proxies
+  JSON-RPC to the forks; anvil signs txs and typed data for its dev accounts, so
+  the app's real wallet store and the Li.Fi provider run unmodified.
+- The specs then prove, with real transactions: seeded balance renders; the
+  **approval flow mines exactly 6 txs and is idempotent** (allowances verified
+  on-chain afterward, reload shows ready with no re-prompt); the trade panel
+  signs a **real V2 EIP-712 order whose signature recovers to the test EOA**;
+  and the bridge executes a fresh Li.Fi route to a **mined source tx while the
+  UI provably never reports completion** — destination settlement can't happen
+  on a fork, which is exactly the false-completion case the assessment forbids.
+
+Requires [foundry](https://getfoundry.sh) (`anvil` on PATH) and network access.
+Three env knobs exist solely so the e2e suite can pin fork-compatible behavior
+(`playwright.config.ts` sets them; the app defaults are the assessment values):
+`NEXT_PUBLIC_LIFI_EXECUTION_TYPE` (e2e: `transaction`),
+`NEXT_PUBLIC_LIFI_BRIDGE_DENY` (e2e: `mayan,across` — their source txs depend on
+off-chain auction/quote-freshness state that doesn't hold on forks), and
+`NEXT_PUBLIC_LIFI_DISABLE_MESSAGE_SIGNING` (e2e: `1` — EIP-2612 native permits
+can't be validated against a fork).
 
 ## Architecture decisions
 
@@ -135,8 +173,9 @@ All have working defaults; the app runs with no `.env` at all. See `.env.example
   handling for wallets that silently drop chain-switch requests.
 - Observability: structured event log per bridge attempt (route id, tool, hashes,
   substatus transitions) — this is the dataset the recovery UX below depends on.
-- E2E tests against a fork (anvil) for the approval flow, and a mocked Li.Fi
-  execution harness for lifecycle regressions.
+- A scheduled mainnet canary: the fork e2e (already in CI) can't observe real
+  destination settlement, so production would add a periodic micro-amount
+  ($1–2) live bridge exercising the full settle path with alerting.
 
 ## Polygon ↔ HyperLiquid bridge production risks
 
@@ -247,4 +286,5 @@ src/
   hooks/      TanStack Query + wallet wiring (useBridge, useReadiness, useTrade…)
   components/ the four panels + small UI primitives
   app/        Next.js App Router shell (layout, page, providers)
+e2e/          Playwright suite: anvil fork bootstrap, injected test wallet, specs
 ```

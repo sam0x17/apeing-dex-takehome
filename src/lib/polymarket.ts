@@ -131,7 +131,7 @@ export interface PolymarketOrder {
   builder: Hex;
 }
 
-const ORDER_TYPES = {
+export const ORDER_TYPES = {
   Order: [
     { name: 'salt', type: 'uint256' },
     { name: 'maker', type: 'address' },
