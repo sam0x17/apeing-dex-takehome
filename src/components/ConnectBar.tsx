@@ -1,6 +1,7 @@
 'use client';
 
 import { useWallet } from '@/hooks/useWallet';
+import { useWallets } from '@/hooks/useWallets';
 import { ARBITRUM_CHAIN_ID, POLYGON_CHAIN_ID } from '@/lib/chains';
 import { shortenAddress } from '@/lib/format';
 import { Button, Dot, ErrorNote } from './ui';
@@ -12,6 +13,8 @@ const CHAIN_NAMES: Record<number, string> = {
 
 export function ConnectBar() {
   const wallet = useWallet();
+  const wallets = useWallets();
+  const connecting = wallet.status === 'connecting';
 
   return (
     <div className="flex flex-col gap-2">
@@ -41,12 +44,29 @@ export function ConnectBar() {
               Disconnect
             </Button>
           </div>
+        ) : wallets.length > 1 ? (
+          // Multiple wallets installed: let the user pick, so a wallet like
+          // Phantom can't shadow the MetaMask the user actually wants.
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-xs text-zinc-500">Connect with</span>
+            <div className="flex flex-wrap justify-end gap-2">
+              {wallets.map((detail) => (
+                <Button
+                  key={detail.info.rdns}
+                  onClick={() => wallet.connect(detail)}
+                  disabled={connecting}
+                >
+                  {detail.info.name}
+                </Button>
+              ))}
+            </div>
+          </div>
         ) : (
           <Button
-            onClick={wallet.connect}
-            disabled={wallet.status === 'connecting'}
+            onClick={() => wallet.connect(wallets[0])}
+            disabled={connecting}
           >
-            {wallet.status === 'connecting' ? 'Connecting…' : 'Connect wallet'}
+            {connecting ? 'Connecting…' : 'Connect wallet'}
           </Button>
         )}
       </div>

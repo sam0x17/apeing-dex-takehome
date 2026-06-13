@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState, useSyncExternalStore } from 'react';
+import type { EIP6963ProviderDetail } from '@/lib/eip6963';
 import {
   connectWallet,
   disconnectWallet,
@@ -12,7 +13,8 @@ import {
 const SERVER_SNAPSHOT: WalletState = { status: 'disconnected' };
 
 export interface UseWallet extends WalletState {
-  connect: () => Promise<void>;
+  /** Connect a specific EIP-6963 wallet, or the fallback if omitted. */
+  connect: (detail?: EIP6963ProviderDetail) => Promise<void>;
   disconnect: () => void;
   /** Readable error from the last connect attempt, if any. */
   connectError?: string;
@@ -26,10 +28,10 @@ export function useWallet(): UseWallet {
   );
   const [connectError, setConnectError] = useState<string>();
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (detail?: EIP6963ProviderDetail) => {
     setConnectError(undefined);
     try {
-      await connectWallet();
+      await connectWallet(detail);
     } catch (error) {
       const code = (error as { code?: number }).code;
       setConnectError(

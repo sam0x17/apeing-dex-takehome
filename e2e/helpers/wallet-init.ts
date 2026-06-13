@@ -88,4 +88,22 @@ export function injectTestWallet({
   };
 
   (window as unknown as { ethereum: typeof provider }).ethereum = provider;
+
+  // Announce over EIP-6963 too (as real wallets do), so the app's discovery
+  // path is exercised end-to-end and not just the window.ethereum fallback.
+  const detail = Object.freeze({
+    info: {
+      uuid: '00000000-0000-4000-8000-000000000001',
+      name: 'Test Wallet',
+      icon: 'data:image/svg+xml;base64,PHN2Zy8+',
+      rdns: 'com.example.testwallet',
+    },
+    provider,
+  });
+  const announce = () =>
+    window.dispatchEvent(
+      new CustomEvent('eip6963:announceProvider', { detail }),
+    );
+  window.addEventListener('eip6963:requestProvider', announce);
+  announce();
 }

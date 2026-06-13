@@ -17,6 +17,7 @@ import {
   POLYGON_CHAIN_ID,
   POLYGON_RPC,
 } from './chains';
+import type { EIP6963ProviderDetail } from './eip6963';
 
 export interface WalletState {
   status: 'disconnected' | 'connecting' | 'connected';
@@ -44,7 +45,14 @@ const CHAINS = { [POLYGON_CHAIN_ID]: polygon, [ARBITRUM_CHAIN_ID]: arbitrum };
  */
 let state: WalletState = { status: 'disconnected' };
 const listeners = new Set<Listener>();
-let providerListenersBound = false;
+
+/**
+ * The provider we actually talk to. Chosen via EIP-6963 (a specific wallet
+ * the user picked) and falling back to `window.ethereum` only when no
+ * EIP-6963 wallet is available.
+ */
+let activeProvider: EIP1193Provider | undefined;
+let boundProvider: EIP1193Provider | undefined;
 
 function setState(next: WalletState) {
   state = next;
@@ -60,13 +68,20 @@ export function subscribeWallet(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+/** Legacy global injected provider (EIP-6963 fallback only). */
 export function getInjectedProvider(): EIP1193Provider | undefined {
   return typeof window === 'undefined' ? undefined : window.ethereum;
 }
 
+/** The provider in use: the EIP-6963 selection, else `window.ethereum`. */
+export function getActiveProvider(): EIP1193Provider | undefined {
+  return activeProvider ?? getInjectedProvider();
+}
+
 function bindProviderListeners(provider: EIP1193Provider) {
-  if (providerListenersBound) return;
-  providerListenersBound = true;
+  // Rebind when the user switches to a different wallet.
+  if (boundProvider === provider) return;
+  boundProvider = provider;
   provider.on('accountsChanged', (accounts) => {
     const [address] = accounts as Address[];
     setState(
@@ -80,13 +95,21 @@ function bindProviderListeners(provider: EIP1193Provider) {
   });
 }
 
-export async function connectWallet(): Promise<void> {
-  const provider = getInjectedProvider();
+/**
+ * Connect a specific wallet. Pass an EIP-6963 detail to target one wallet
+ * (e.g. MetaMask even when Phantom is also installed); omit it to use the
+ * legacy `window.ethereum` fallback.
+ */
+export async function connectWallet(
+  detail?: EIP6963ProviderDetail,
+): Promise<void> {
+  const provider = detail?.provider ?? getActiveProvider();
   if (!provider) {
     throw new Error(
       'No injected wallet found. Install MetaMask (or another EIP-1193 wallet) and reload.',
     );
   }
+  activeProvider = provider;
   setState({ ...state, status: 'connecting' });
   try {
     const accounts = (await provider.request({
@@ -114,7 +137,7 @@ export function disconnectWallet(): void {
 
 /** Wallet client for the connected account on whatever chain it is on. */
 export function getWalletClient(): WalletClient {
-  const provider = getInjectedProvider();
+  const provider = getActiveProvider();
   if (!provider || !state.address) {
     throw new Error('Wallet is not connected.');
   }
@@ -132,7 +155,7 @@ export function getWalletClient(): WalletClient {
  * EthereumProvider expects for its `switchChain` option.
  */
 export async function switchChain(chainId: number): Promise<WalletClient> {
-  const provider = getInjectedProvider();
+  const provider = getActiveProvider();
   if (!provider) throw new Error('Wallet is not connected.');
   const chain = CHAINS[chainId as keyof typeof CHAINS];
   if (!chain) throw new Error(`Unsupported chain id ${chainId}.`);

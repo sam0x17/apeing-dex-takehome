@@ -109,6 +109,12 @@ can't be validated against a fork).
   is viem + injected wallet; a `useSyncExternalStore`-based EIP-1193 store covers
   connect/accounts/chain-switch without a second framework, and feeds the Li.Fi
   `EthereumProvider` (`getWalletClient`/`switchChain`) directly.
+- **EIP-6963 multi-wallet discovery** (`lib/eip6963.ts`). Talking to
+  `window.ethereum` directly breaks when several wallets are installed — whichever
+  extension grabbed the global wins, so MetaMask gets shadowed by e.g. Phantom's
+  EVM provider. The app instead discovers announced wallets and, when more than one
+  is present, shows a picker so the user connects the wallet they mean;
+  `window.ethereum` remains only as a last-resort fallback.
 - **Li.Fi SDK v4** (current major: `createClient` + provider packages,
   `execution.actions[]`). `order: 'SAFEST'` is passed as specified — it still
   type-checks but is deprecated upstream (server treats it as legacy ordering);
@@ -168,9 +174,9 @@ can't be validated against a fork).
   support.
 - Real order lifecycle after submission: open-order list, fills via the CLOB user
   websocket, cancel/replace.
-- Wallet hardening: EIP-6963 multi-provider discovery (not just `window.ethereum`),
-  Ledger-via-MetaMask quirks (`signTypedData_v4` support detection), and explicit
-  handling for wallets that silently drop chain-switch requests.
+- Further wallet hardening: Ledger-via-MetaMask quirks (`signTypedData_v4` support
+  detection) and explicit handling for wallets that silently drop chain-switch
+  requests. (EIP-6963 multi-provider discovery is already implemented — see below.)
 - Observability: structured event log per bridge attempt (route id, tool, hashes,
   substatus transitions) — this is the dataset the recovery UX below depends on.
 - A scheduled mainnet canary: the fork e2e (already in CI) can't observe real
