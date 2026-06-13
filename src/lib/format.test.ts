@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatEta, formatTokenAmount, formatUsd, shortenAddress } from './format';
+import {
+  formatEta,
+  formatPercent,
+  formatTokenAmount,
+  formatUsd,
+  shortenAddress,
+} from './format';
 
 describe('formatTokenAmount', () => {
   it('formats 6-decimal token amounts', () => {
@@ -37,6 +43,19 @@ describe('formatEta', () => {
   it('handles nonsense input', () => {
     expect(formatEta(0)).toBe('—');
     expect(formatEta(Number.NaN)).toBe('—');
+  });
+});
+
+describe('formatPercent', () => {
+  it('formats a fraction as a percentage, up to one decimal', () => {
+    expect(formatPercent(0.58)).toBe('58%');
+    expect(formatPercent(0.585)).toBe('58.5%');
+    expect(formatPercent(1)).toBe('100%');
+  });
+
+  it('falls back for undefined / non-finite', () => {
+    expect(formatPercent(undefined)).toBe('—');
+    expect(formatPercent(Number.NaN)).toBe('—');
   });
 });
 

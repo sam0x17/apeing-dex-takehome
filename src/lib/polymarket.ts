@@ -87,6 +87,18 @@ export interface BookTop {
   midpoint?: number;
 }
 
+/**
+ * Market-implied probability ("odds") for an outcome. CLOB prices live in
+ * [0, 1] and read directly as probability, so the mid price is the implied
+ * odds; fall back to a one-sided touch when the book has only one side.
+ * Returns a fraction in [0, 1], or undefined for an empty book.
+ */
+export function impliedProbability(book: BookTop): number | undefined {
+  const price = book.midpoint ?? book.bestAsk?.price ?? book.bestBid?.price;
+  if (price === undefined || !Number.isFinite(price)) return undefined;
+  return Math.min(1, Math.max(0, price));
+}
+
 interface RawBook {
   bids?: { price: string; size: string }[];
   asks?: { price: string; size: string }[];

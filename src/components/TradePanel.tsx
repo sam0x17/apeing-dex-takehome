@@ -7,8 +7,13 @@ import { useReadiness } from '@/hooks/useReadiness';
 import { useTokenBalanceGate } from '@/hooks/useTradeGate';
 import { useTrade } from '@/hooks/useTrade';
 import { PUSD_DECIMALS, PUSD_SYMBOL } from '@/lib/chains';
-import { formatTokenAmount, formatUsd } from '@/lib/format';
-import { FIXED_MARKET, parseOrderShares, type OrderSide } from '@/lib/polymarket';
+import { formatPercent, formatTokenAmount, formatUsd } from '@/lib/format';
+import {
+  FIXED_MARKET,
+  impliedProbability,
+  parseOrderShares,
+  type OrderSide,
+} from '@/lib/polymarket';
 import { Button, ErrorNote, KV, Panel } from './ui';
 
 function shortTokenId(id: string): string {
@@ -21,9 +26,14 @@ export function TradePanel({ account }: { account?: Address }) {
   const readiness = useReadiness(account, FIXED_MARKET);
   const gate = useTokenBalanceGate(account);
   const trade = useTrade(account);
-  const tokenId =
-    outcome === 'YES' ? FIXED_MARKET.yesTokenId : FIXED_MARKET.noTokenId;
-  const book = useBookTop(tokenId);
+  // Both books so each outcome button can show its own live implied odds.
+  const yesBook = useBookTop(FIXED_MARKET.yesTokenId);
+  const noBook = useBookTop(FIXED_MARKET.noTokenId);
+  const book = outcome === 'YES' ? yesBook : noBook;
+  const odds = {
+    YES: yesBook.data ? impliedProbability(yesBook.data) : undefined,
+    NO: noBook.data ? impliedProbability(noBook.data) : undefined,
+  };
 
   const parsedShares = parseOrderShares(sharesInput, FIXED_MARKET);
   const shares = parsedShares.ok ? parsedShares.shares : undefined;
@@ -79,7 +89,12 @@ export function TradePanel({ account }: { account?: Address }) {
                 : 'border-zinc-700 bg-zinc-950 text-zinc-400 hover:border-zinc-500'
             }`}
           >
-            {o}
+            <span className="flex items-baseline justify-center gap-2">
+              {o}
+              <span className="text-base font-semibold text-zinc-100">
+                {formatPercent(odds[o])}
+              </span>
+            </span>
             <span className="block text-[10px] font-normal text-zinc-500">
               {shortTokenId(o === 'YES' ? FIXED_MARKET.yesTokenId : FIXED_MARKET.noTokenId)}
             </span>
@@ -88,6 +103,9 @@ export function TradePanel({ account }: { account?: Address }) {
       </div>
 
       <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 flex flex-col gap-1">
+        <KV label={`Implied odds (${outcome})`}>
+          {book.data ? formatPercent(impliedProbability(book.data)) : '—'}
+        </KV>
         <KV label={`Best bid (${outcome})`}>
           {book.data?.bestBid
             ? `${book.data.bestBid.price.toFixed(2)} × ${book.data.bestBid.size}`

@@ -24,6 +24,14 @@ export function formatUsd(value: number | string): string {
   });
 }
 
+/** Format a [0,1] probability as a percentage, e.g. 0.585 → "58.5%". */
+export function formatPercent(fraction: number | undefined): string {
+  if (fraction === undefined || !Number.isFinite(fraction)) return '—';
+  return `${(fraction * 100).toLocaleString('en-US', {
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 export function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }

@@ -21,6 +21,9 @@ test('shows the live book and signs a real V2 order that recovers to the EOA', a
   await expect(panel.getByText(/0\.\d{2} × /).first()).toBeVisible({
     timeout: 30_000,
   });
+  // Implied odds (the token price as a probability) are shown.
+  await expect(panel.getByText('Implied odds (YES)')).toBeVisible();
+  await expect(panel.getByText(/\d+(\.\d)?%/).first()).toBeVisible();
 
   // Custom amount flows through to the signed order (not hardcoded to 5).
   await panel.getByLabel('Shares').fill('10');

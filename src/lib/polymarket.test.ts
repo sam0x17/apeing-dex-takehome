@@ -3,6 +3,7 @@ import {
   CTF_EXCHANGE_V2,
   FIXED_MARKET,
   NEG_RISK_CTF_EXCHANGE_V2,
+  impliedProbability,
   orderDomain,
   parseOrderShares,
   preparePolymarketOrder,
@@ -74,6 +75,32 @@ describe('preparePolymarketOrder', () => {
       fixedRandom,
     );
     expect(order.makerAmount).toBe(2_100_000n); // 0.07 × 30 = 2.1 pUSD exactly
+  });
+});
+
+describe('impliedProbability', () => {
+  it('uses the midpoint as the implied probability', () => {
+    expect(
+      impliedProbability({
+        bestBid: { price: 0.42, size: 10 },
+        bestAsk: { price: 0.44, size: 10 },
+        midpoint: 0.43,
+      }),
+    ).toBeCloseTo(0.43);
+  });
+
+  it('falls back to a one-sided touch when there is no midpoint', () => {
+    expect(impliedProbability({ bestAsk: { price: 0.6, size: 5 } })).toBe(0.6);
+    expect(impliedProbability({ bestBid: { price: 0.4, size: 5 } })).toBe(0.4);
+  });
+
+  it('returns undefined for an empty book', () => {
+    expect(impliedProbability({})).toBeUndefined();
+  });
+
+  it('clamps to [0, 1]', () => {
+    expect(impliedProbability({ midpoint: 1.2 })).toBe(1);
+    expect(impliedProbability({ midpoint: -0.1 })).toBe(0);
   });
 });
 
