@@ -1,12 +1,15 @@
 # Polymarket V2 cross-chain deposit & trade readiness
 
+**Live demo:** <!-- TODO: paste Vercel URL --> https://<your-deployment>.vercel.app
+
 A focused vertical slice: **bridge Arbitrum USDC → Polygon pUSD via Li.Fi, watch the
 pUSD balance land, pass the Polymarket V2 approval gate, and walk a fixed market to
 the edge of a real CLOB order.**
 
 Four panels on one page:
 
-1. **Bridge** — Li.Fi `getRoutes` → `executeRoute` with live quote (receive amount,
+1. **Bridge** — Li.Fi `getRoutes` → `executeRoute` with an amount input (and a
+   **Max** that fills the full source balance), a live quote (receive amount,
    fees, ETA, tool), a fresh route fetched immediately before execution, the
    `toAmountUSD/fromAmountUSD ∈ [0.5, 1.5]` pricing sanity guard enforced at
    execution time, and full lifecycle states (`quoting → signing → source submitted →
@@ -23,9 +26,11 @@ Four panels on one page:
    wallets without batching. Approvals already set are skipped (idempotent,
    re-runnable, no wasted gas). Green "Ready to trade" when the plan is empty.
 4. **Fixed market** — one hardcoded V2 binary market with YES/NO token ids, live
-   best bid/ask from the CLOB, the user's pUSD balance, and small buy/sell controls
-   that are disabled until balance + approvals are ready. Buy/sell prepares the real
-   V2 EIP-712 order struct and collects a real EOA signature, then stops at a
+   best bid/ask from the CLOB, **implied odds** (the token price as a probability)
+   on each outcome, the user's pUSD balance, and a **shares input** (any size at or
+   above the market minimum, with an estimated cost and an affordability check).
+   Buy/sell are disabled until balance + approvals are ready, then prepare the real
+   V2 EIP-712 order struct and collect a real EOA signature before stopping at a
    documented execution boundary (see [Known limitations](#known-limitations)).
 
 ## Run locally
@@ -35,8 +40,8 @@ pnpm install
 pnpm dev        # http://localhost:3000
 ```
 
-Other commands: `pnpm test` (vitest, 51 unit tests), `pnpm test:e2e` (Playwright,
-8 fork-based e2e tests — see [Testing](#testing)), `pnpm typecheck`, `pnpm lint`,
+Other commands: `pnpm test` (vitest, 65 unit tests), `pnpm test:e2e` (Playwright,
+9 fork-based e2e tests — see [Testing](#testing)), `pnpm typecheck`, `pnpm lint`,
 `pnpm build`. CI runs all five on every push/PR.
 
 You need an injected EOA wallet (MetaMask) with a little USDC + ETH on Arbitrum to
@@ -56,12 +61,13 @@ All have working defaults; the app runs with no `.env` at all. See `.env.example
 
 Two layers, no mocks inside the app:
 
-**Unit (vitest, 51 tests)** — every pure function in `src/lib/`: pricing-guard
+**Unit (vitest, 65 tests)** — every pure function in `src/lib/`: pricing-guard
 boundaries, bridge-lifecycle derivation (incl. "steps claim DONE but destination
-pending must not be done"), approval-plan idempotence, V2 order math (integer-exact
-amounts, tick/min-size validation), quote summarization, book parsing.
+pending must not be done"), market-scoped approval planning + call encoding,
+EIP-6963 provider dedupe, V2 order math (integer-exact amounts, tick/min/share-size
+validation), implied-probability derivation, quote summarization, book parsing.
 
-**E2E (Playwright, 8 tests)** — there is no usable testnet for this stack (Li.Fi
+**E2E (Playwright, 9 tests)** — there is no usable testnet for this stack (Li.Fi
 is mainnet-only, Polymarket has no public testnet CLOB, pUSD exists only on
 Polygon mainnet), so the suite runs the real app against **anvil mainnet forks**
 of Polygon + Arbitrum with real read-only Li.Fi / CLOB APIs:
@@ -70,15 +76,18 @@ of Polygon + Arbitrum with real read-only Li.Fi / CLOB APIs:
   impersonating the ConditionalTokens escrow — pUSD uses namespaced storage, so
   the usual balance-slot trick can't; USDC via storage-slot search).
 - An injected EIP-1193 test wallet (`e2e/helpers/wallet-init.ts`) proxies
-  JSON-RPC to the forks; anvil signs txs and typed data for its dev accounts, so
-  the app's real wallet store and the Li.Fi provider run unmodified.
-- The specs then prove, with real transactions: seeded balance renders; the
-  **approval flow mines exactly 6 txs and is idempotent** (allowances verified
-  on-chain afterward, reload shows ready with no re-prompt); the trade panel
-  signs a **real V2 EIP-712 order whose signature recovers to the test EOA**;
-  and the bridge executes a fresh Li.Fi route to a **mined source tx while the
-  UI provably never reports completion** — destination settlement can't happen
-  on a fork, which is exactly the false-completion case the assessment forbids.
+  JSON-RPC to the forks and implements EIP-6963 announce + EIP-5792
+  `wallet_sendCalls`, so the app's wallet discovery, batched-approval, and Li.Fi
+  paths all run unmodified; anvil signs txs and typed data for its dev accounts.
+- The specs then prove, with real transactions: the EIP-6963 picker connects the
+  chosen wallet when two are present; seeded balance renders; the **approval flow
+  batches the market's required approvals into one EIP-5792 call and is idempotent**
+  (allowance + operator verified on-chain afterward, reload shows ready with no
+  re-prompt); the trade panel signs a **real V2 EIP-712 order — for a custom share
+  amount — whose signature recovers to the test EOA**; and the bridge executes a
+  fresh Li.Fi route to a **mined source tx while the UI provably never reports
+  completion** — destination settlement can't happen on a fork, which is exactly the
+  false-completion case the assessment forbids.
 
 Requires [foundry](https://getfoundry.sh) (`anvil` on PATH) and network access.
 Three env knobs exist solely so the e2e suite can pin fork-compatible behavior
@@ -103,27 +112,20 @@ can't be validated against a fork).
 - **The preview quote is never executed.** `useBridge.start()` always re-fetches a
   route and re-runs the pricing guard before `executeRoute`; the guard also runs on
   every displayed quote so the user sees the rejection reason before clicking.
-- **Approvals are a computed plan, not a sequence of ifs.** `computeApprovalPlan`
-  diffs on-chain state (one multicall) against `requiredApprovals(market)` — which
-  is itself market-aware (binary markets need the CTF Exchange; neg-risk markets
-  need the Neg Risk Exchange + Adapter), so the user is never asked to approve
-  contracts the current market won't touch. Idempotence is a property of the data
-  flow, and the V2 address set in `lib/approvals.ts` is config.
-- **Approvals submit as one EIP-5792 batch.** The plan is encoded to raw calls
-  (`approvalToCall`) and sent via viem's `sendCalls` so a capable wallet shows a
-  single confirmation for all of them; `experimental_fallback` degrades to
-  sequential `eth_sendTransaction` on wallets without EIP-5792. On the binary
-  fixed market a fresh wallet goes from 6 prompts to one confirmation of two calls.
-- **viem + a ~150-line injected-wallet store instead of wagmi.** The assessment stack
-  is viem + injected wallet; a `useSyncExternalStore`-based EIP-1193 store covers
-  connect/accounts/chain-switch without a second framework, and feeds the Li.Fi
-  `EthereumProvider` (`getWalletClient`/`switchChain`) directly.
-- **EIP-6963 multi-wallet discovery** (`lib/eip6963.ts`). Talking to
-  `window.ethereum` directly breaks when several wallets are installed — whichever
-  extension grabbed the global wins, so MetaMask gets shadowed by e.g. Phantom's
-  EVM provider. The app instead discovers announced wallets and, when more than one
-  is present, shows a picker so the user connects the wallet they mean;
-  `window.ethereum` remains only as a last-resort fallback.
+- **Approvals are a market-scoped, idempotent plan submitted as one batch.**
+  `computeApprovalPlan` diffs on-chain state (one multicall) against
+  `requiredApprovals(market)` — market-aware, so the user is never asked to approve
+  contracts the current market won't touch (binary needs 2, neg-risk 4) — then
+  encodes the missing calls (`approvalToCall`) and sends them via viem `sendCalls`
+  (EIP-5792) for a single wallet confirmation, with `experimental_fallback` to
+  sequential `eth_sendTransaction`. Idempotence is a property of the data flow; the
+  V2 address set in `lib/approvals.ts` is config.
+- **viem + a small injected-wallet store instead of wagmi, with EIP-6963 discovery.**
+  A `useSyncExternalStore`-based EIP-1193 store covers connect/accounts/chain-switch
+  without a second framework and feeds the Li.Fi `EthereumProvider` directly.
+  EIP-6963 (`lib/eip6963.ts`) enumerates announced wallets so MetaMask isn't shadowed
+  by e.g. Phantom grabbing `window.ethereum` — a picker appears when more than one is
+  present; the global is a last-resort fallback.
 - **Li.Fi SDK v4** (current major: `createClient` + provider packages,
   `execution.actions[]`). `order: 'SAFEST'` is passed as specified — it still
   type-checks but is deprecated upstream (server treats it as legacy ordering);
@@ -186,7 +188,8 @@ can't be validated against a fork).
   websocket, cancel/replace.
 - Further wallet hardening: Ledger-via-MetaMask quirks (`signTypedData_v4` support
   detection) and explicit handling for wallets that silently drop chain-switch
-  requests. (EIP-6963 multi-provider discovery is already implemented — see below.)
+  requests. (EIP-6963 multi-provider discovery is already implemented — see
+  Architecture decisions.)
 - Observability: structured event log per bridge attempt (route id, tool, hashes,
   substatus transitions) — this is the dataset the recovery UX below depends on.
 - A scheduled mainnet canary: the fork e2e (already in CI) can't observe real
@@ -281,10 +284,11 @@ deposit semantics. HyperLiquid is different in kind, not just in degree:
   check destination-leg gas *before* leg 1 executes; on Polygon specifically, use
   aggressive EIP-1559 fee bumping — underpriced txs there routinely hang for
   minutes, which users read as "the bridge stole my money".
-- **Nonce:** one in-flight tx per account per chain from the app; serialize
-  approval + send (as the approval flow here does — receipt-wait between txs);
-  track the account nonce, not just the tx hash, so a MetaMask speed-up/replace
-  doesn't orphan tracking.
+- **Nonce:** one in-flight tx per account per chain from the app; avoid firing
+  state-changing txs in parallel (the approval flow batches them into one EIP-5792
+  call where the wallet supports it, sidestepping multiple in-flight nonces, and
+  falls back to serialized sends otherwise); track the account nonce, not just the
+  tx hash, so a MetaMask speed-up/replace doesn't orphan tracking.
 - **Route:** re-quote immediately before each leg's execution (never execute a
   stale quote); pin the per-leg sanity ratio; deny-list tools that can't deliver
   the exact asset the next leg requires; enforce deposit minimums **after** fees.
