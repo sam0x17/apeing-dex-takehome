@@ -52,6 +52,30 @@ export const FIXED_MARKET: FixedMarket = {
   minOrderSize: 5,
 };
 
+export type ParsedShares =
+  | { ok: true; shares: number }
+  | { ok: false; error: string };
+
+/**
+ * Parse a user-entered share amount against a market's minimum size.
+ * Pure, so the validation is unit-tested independently of the panel.
+ */
+export function parseOrderShares(
+  input: string,
+  market: Pick<FixedMarket, 'minOrderSize'>,
+): ParsedShares {
+  const trimmed = input.trim();
+  if (!trimmed) return { ok: false, error: 'Enter a number of shares.' };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) {
+    return { ok: false, error: 'Enter a valid number of shares.' };
+  }
+  if (n < market.minOrderSize) {
+    return { ok: false, error: `Minimum order size is ${market.minOrderSize} shares.` };
+  }
+  return { ok: true, shares: n };
+}
+
 export interface BookLevel {
   price: number;
   size: number;

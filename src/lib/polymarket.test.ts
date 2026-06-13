@@ -4,6 +4,7 @@ import {
   FIXED_MARKET,
   NEG_RISK_CTF_EXCHANGE_V2,
   orderDomain,
+  parseOrderShares,
   preparePolymarketOrder,
   submitPolymarketOrder,
   type OrderIntent,
@@ -73,6 +74,26 @@ describe('preparePolymarketOrder', () => {
       fixedRandom,
     );
     expect(order.makerAmount).toBe(2_100_000n); // 0.07 × 30 = 2.1 pUSD exactly
+  });
+});
+
+describe('parseOrderShares', () => {
+  it('accepts amounts at or above the minimum', () => {
+    expect(parseOrderShares('5', FIXED_MARKET)).toEqual({ ok: true, shares: 5 });
+    expect(parseOrderShares('  12.5 ', FIXED_MARKET)).toEqual({ ok: true, shares: 12.5 });
+  });
+
+  it('rejects amounts below the minimum order size', () => {
+    const r = parseOrderShares('4', FIXED_MARKET);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/minimum order size is 5/i);
+  });
+
+  it('rejects empty, zero, negative, and non-numeric input', () => {
+    expect(parseOrderShares('', FIXED_MARKET).ok).toBe(false);
+    expect(parseOrderShares('0', FIXED_MARKET).ok).toBe(false);
+    expect(parseOrderShares('-5', FIXED_MARKET).ok).toBe(false);
+    expect(parseOrderShares('abc', FIXED_MARKET).ok).toBe(false);
   });
 });
 

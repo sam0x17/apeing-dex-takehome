@@ -22,7 +22,9 @@ test('shows the live book and signs a real V2 order that recovers to the EOA', a
     timeout: 30_000,
   });
 
-  const buy = panel.getByRole('button', { name: `Buy ${FIXED_MARKET.minOrderSize} YES` });
+  // Custom amount flows through to the signed order (not hardcoded to 5).
+  await panel.getByLabel('Shares').fill('10');
+  const buy = panel.getByRole('button', { name: 'Buy 10 YES' });
   await expect(buy).toBeEnabled(); // pUSD seeded + approvals set in 02
 
   await buy.click();
@@ -44,6 +46,8 @@ test('shows the live book and signs a real V2 order that recovers to the EOA', a
   expect(payload.orderType).toBe('GTC');
   expect(payload.order.side).toBe('BUY');
   expect(payload.order.maker.toLowerCase()).toBe(TEST_ACCOUNT.toLowerCase());
+  // 10 shares out (6 decimals) — proves the entered amount, not a fixed 5.
+  expect(payload.order.takerAmount).toBe('10000000');
 
   // Strongest possible check: the EIP-712 signature in the payload recovers
   // to the connected EOA over the exact V2 Order struct and domain.
