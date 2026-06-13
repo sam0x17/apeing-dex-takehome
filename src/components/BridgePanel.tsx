@@ -91,7 +91,7 @@ export function BridgePanel({ account }: { account?: Address }) {
             </p>
           )}
           {quote.error && (
-            <ErrorNote>{(quote.error as Error).message}</ErrorNote>
+            <ErrorNote>{quote.error.message}</ErrorNote>
           )}
           {summary && (
             <>

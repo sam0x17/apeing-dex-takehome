@@ -66,7 +66,7 @@ export function ReadinessPanel({ account }: { account?: Address }) {
           )}
 
           {readiness.error ? (
-            <ErrorNote>{(readiness.error as Error).message}</ErrorNote>
+            <ErrorNote>{readiness.error.message}</ErrorNote>
           ) : null}
         </>
       )}

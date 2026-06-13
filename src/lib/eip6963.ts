@@ -38,7 +38,7 @@ interface AnnounceEvent extends CustomEvent {
  * name so the picker order is deterministic.
  */
 export function upsertProviderDetail(
-  list: EIP6963ProviderDetail[],
+  list: readonly EIP6963ProviderDetail[],
   detail: EIP6963ProviderDetail,
 ): EIP6963ProviderDetail[] {
   const next = list.filter((d) => d.info.rdns !== detail.info.rdns);
@@ -66,10 +66,7 @@ export function startWalletDiscovery(): void {
   if (started || typeof window === 'undefined') return;
   started = true;
   window.addEventListener('eip6963:announceProvider', (event) => {
-    details = upsertProviderDetail(
-      details as EIP6963ProviderDetail[],
-      (event as AnnounceEvent).detail,
-    );
+    details = upsertProviderDetail(details, (event as AnnounceEvent).detail);
     emit();
   });
   window.dispatchEvent(new Event('eip6963:requestProvider'));

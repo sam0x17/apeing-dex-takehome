@@ -1,5 +1,5 @@
 import type { Address, Hex, WalletClient } from 'viem';
-import { parseUnits } from 'viem';
+import { parseUnits, zeroHash } from 'viem';
 import { POLYGON_CHAIN_ID } from './chains';
 
 /**
@@ -12,13 +12,28 @@ import { POLYGON_CHAIN_ID } from './chains';
 
 export const CLOB_BASE_URL = 'https://clob.polymarket.com';
 
+/**
+ * Polymarket V2 protocol addresses on Polygon (post April 2026 pUSD upgrade).
+ * Single source of truth — `approvals.ts` builds its spender/operator list
+ * from these, so the two can't drift apart.
+ */
+export const POLYMARKET_V2_ADDRESSES = {
+  /** Verifying contract / venue for binary (non neg-risk) markets. */
+  ctfExchange: '0xE111180000d2663C0091e4f400237545B87B996B',
+  /** Verifying contract / venue for neg-risk markets. */
+  negRiskExchange: '0xe2222d279d744050d28e00520010520000310F59',
+  /** Adapter used by neg-risk markets. */
+  negRiskAdapter: '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296',
+  /** Gnosis ConditionalTokens holding outcome tokens (unchanged in V2). */
+  conditionalTokens: '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',
+} as const satisfies Record<string, Address>;
+
 /** V2 CTF Exchange — verifying contract for binary (non neg-risk) markets. */
-export const CTF_EXCHANGE_V2: Address =
-  '0xE111180000d2663C0091e4f400237545B87B996B';
+export const CTF_EXCHANGE_V2: Address = POLYMARKET_V2_ADDRESSES.ctfExchange;
 
 /** V2 Neg Risk CTF Exchange — verifying contract for neg-risk markets. */
 export const NEG_RISK_CTF_EXCHANGE_V2: Address =
-  '0xe2222d279d744050d28e00520010520000310F59';
+  POLYMARKET_V2_ADDRESSES.negRiskExchange;
 
 export interface FixedMarket {
   title: string;
@@ -183,8 +198,6 @@ export const ORDER_TYPES = {
   ],
 } as const;
 
-const ZERO_BYTES32: Hex = `0x${'0'.repeat(64)}`;
-
 export function orderDomain(market: FixedMarket) {
   return {
     name: 'Polymarket CTF Exchange',
@@ -236,8 +249,8 @@ export function preparePolymarketOrder(
     side: side === 'BUY' ? 0 : 1,
     signatureType: 0, // plain EOA signature
     timestamp: BigInt(now()),
-    metadata: ZERO_BYTES32,
-    builder: ZERO_BYTES32,
+    metadata: zeroHash,
+    builder: zeroHash,
   };
 }
 

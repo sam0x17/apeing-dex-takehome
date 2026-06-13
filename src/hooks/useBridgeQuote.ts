@@ -54,7 +54,9 @@ export function useBridgeQuote(amountInput: string, account?: Address) {
   const amount = parseUsdcAmount(debouncedInput);
 
   return useQuery({
-    queryKey: ['bridge-quote', debouncedInput, account],
+    // Key on the parsed amount, not the raw text, so "10.0" and "10.00"
+    // resolve to one cache entry instead of two.
+    queryKey: ['bridge-quote', amount?.toString(), account],
     enabled: !!account && amount !== undefined,
     refetchInterval: 30_000,
     retry: 1,

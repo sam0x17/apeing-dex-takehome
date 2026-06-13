@@ -29,7 +29,7 @@ export function BalancePanel({ account }: { account?: Address }) {
           </div>
           {balance.error && (
             <ErrorNote>
-              Could not read balance: {(balance.error as Error).message}
+              Could not read balance: {balance.error.message}
             </ErrorNote>
           )}
           <KV label="Token">

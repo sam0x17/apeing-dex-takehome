@@ -115,6 +115,9 @@ export async function connectWallet(
     const accounts = (await provider.request({
       method: 'eth_requestAccounts',
     })) as Address[];
+    if (accounts.length === 0) {
+      throw new Error('Wallet approved the connection but returned no accounts.');
+    }
     const chainIdHex = (await provider.request({
       method: 'eth_chainId',
     })) as string;

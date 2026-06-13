@@ -1,6 +1,7 @@
 import { encodeFunctionData, maxUint256, type Address, type Hex } from 'viem';
 import { PUSD } from './chains';
 import { CONDITIONAL_TOKENS_ABI, ERC20_ABI } from './erc20';
+import { POLYMARKET_V2_ADDRESSES } from './polymarket';
 
 /**
  * Polymarket V2 trade-readiness requirements on Polygon.
@@ -28,19 +29,19 @@ export interface SpenderRequirement {
 
 /** Gnosis ConditionalTokens contract holding outcome tokens (unchanged in V2). */
 export const CONDITIONAL_TOKENS: Address =
-  '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
+  POLYMARKET_V2_ADDRESSES.conditionalTokens;
 
 export const CTF_EXCHANGE_V2: SpenderRequirement = {
   name: 'CTF Exchange V2',
-  address: '0xE111180000d2663C0091e4f400237545B87B996B',
+  address: POLYMARKET_V2_ADDRESSES.ctfExchange,
 };
 export const NEG_RISK_CTF_EXCHANGE_V2: SpenderRequirement = {
   name: 'Neg Risk CTF Exchange V2',
-  address: '0xe2222d279d744050d28e00520010520000310F59',
+  address: POLYMARKET_V2_ADDRESSES.negRiskExchange,
 };
 export const NEG_RISK_ADAPTER: SpenderRequirement = {
   name: 'Neg Risk Adapter',
-  address: '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296',
+  address: POLYMARKET_V2_ADDRESSES.negRiskAdapter,
 };
 
 export interface ApprovalRequirements {

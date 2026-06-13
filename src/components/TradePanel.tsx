@@ -126,7 +126,7 @@ export function TradePanel({ account }: { account?: Address }) {
             : '—'}
         </KV>
         {book.error ? (
-          <ErrorNote>{(book.error as Error).message}</ErrorNote>
+          <ErrorNote>{book.error.message}</ErrorNote>
         ) : null}
       </div>
 
