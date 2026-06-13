@@ -15,6 +15,10 @@ test('quotes USDC→pUSD live and renders the required quote fields', async ({
   // Seeded fork balance is read through the app's Arbitrum RPC.
   await expect(panel.getByText('Balance: 250 USDC')).toBeVisible();
 
+  // Max fills the input with the full USDC balance (full precision, parseable).
+  await panel.getByRole('button', { name: 'Max' }).click();
+  await expect(panel.getByLabel('Amount (USDC on Arbitrum)')).toHaveValue('250');
+
   await panel.getByLabel('Amount (USDC on Arbitrum)').fill('25');
   await expect(panel.getByText('Expected receive')).toBeVisible({
     timeout: 30_000,
