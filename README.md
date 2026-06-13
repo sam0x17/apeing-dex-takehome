@@ -43,7 +43,7 @@ exercise the bridge end-to-end yourself.
 ### Env vars
 
 ```bash
-NEXT_PUBLIC_POLYGON_RPC=        # Polygon RPC for reads (default: polygon-rpc.com)
+NEXT_PUBLIC_POLYGON_RPC=        # Polygon RPC for reads (default: publicnode)
 NEXT_PUBLIC_LIFI_INTEGRATOR=    # Li.Fi integrator id (default: sam-johnson-assessment)
 NEXT_PUBLIC_ARBITRUM_RPC=       # optional, source-chain balance reads
 ```
