@@ -1,6 +1,6 @@
 # Polymarket V2 cross-chain deposit & trade readiness
 
-**Live demo:** https://apeing-dex-takehome.vercel.app
+**Live demo:** [apeing-dex-takehome.vercel.app](https://apeing-dex-takehome.vercel.app)
 
 A focused vertical slice: **bridge Arbitrum USDC → Polygon pUSD via Li.Fi, watch the
 pUSD balance land, pass the Polymarket V2 approval gate, and walk a fixed market to
