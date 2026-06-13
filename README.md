@@ -16,10 +16,12 @@ Four panels on one page:
 2. **Balance** — pUSD `balanceOf` for the connected EOA on Polygon, auto-invalidated
    the moment the bridge reports destination settlement (plus a 30s poll).
 3. **Trade readiness** — pUSD allowances + ConditionalTokens `isApprovedForAll`
-   for the V2 spender/operator set, read in one multicall. Missing approvals are
-   computed as a plan and submitted one wallet prompt at a time; approvals already
-   set are skipped (idempotent, re-runnable, no wasted gas). Green "Ready to trade"
-   when the plan is empty.
+   for the V2 spender/operator set, read in one multicall. Only the approvals the
+   *selected market* needs are required (the binary fixed market needs 2, not the
+   full neg-risk set of 6), and the missing ones are submitted as a **single
+   EIP-5792 batch** — one wallet confirmation, with a sequential fallback for
+   wallets without batching. Approvals already set are skipped (idempotent,
+   re-runnable, no wasted gas). Green "Ready to trade" when the plan is empty.
 4. **Fixed market** — one hardcoded V2 binary market with YES/NO token ids, live
    best bid/ask from the CLOB, the user's pUSD balance, and small buy/sell controls
    that are disabled until balance + approvals are ready. Buy/sell prepares the real
@@ -102,9 +104,16 @@ can't be validated against a fork).
   route and re-runs the pricing guard before `executeRoute`; the guard also runs on
   every displayed quote so the user sees the rejection reason before clicking.
 - **Approvals are a computed plan, not a sequence of ifs.** `computeApprovalPlan`
-  diffs on-chain state (one multicall) against a declarative requirement list and
-  returns exactly the missing transactions — idempotence is a property of the data
+  diffs on-chain state (one multicall) against `requiredApprovals(market)` — which
+  is itself market-aware (binary markets need the CTF Exchange; neg-risk markets
+  need the Neg Risk Exchange + Adapter), so the user is never asked to approve
+  contracts the current market won't touch. Idempotence is a property of the data
   flow, and the V2 address set in `lib/approvals.ts` is config.
+- **Approvals submit as one EIP-5792 batch.** The plan is encoded to raw calls
+  (`approvalToCall`) and sent via viem's `sendCalls` so a capable wallet shows a
+  single confirmation for all of them; `experimental_fallback` degrades to
+  sequential `eth_sendTransaction` on wallets without EIP-5792. On the binary
+  fixed market a fresh wallet goes from 6 prompts to one confirmation of two calls.
 - **viem + a ~150-line injected-wallet store instead of wagmi.** The assessment stack
   is viem + injected wallet; a `useSyncExternalStore`-based EIP-1193 store covers
   connect/accounts/chain-switch without a second framework, and feeds the Li.Fi
@@ -152,10 +161,11 @@ can't be validated against a fork).
   If no direct route exists for an amount, the form reports "no route" rather than
   composing bridge + wrap itself — production would quote to USDC.e and append the
   wrap call (Li.Fi contract-calls API or a second tx).
-- **Approval set is the V2 trading trio** (CTF Exchange V2, Neg Risk CTF Exchange V2,
-  Neg Risk Adapter — for both pUSD allowance and CTF operator). The official ts-sdk
-  additionally approves the collateral adapters (split/merge/redeem) and
-  router/Exchange-V3 (forward-compat); they're one-line additions to the config list.
+- **Approval set is scoped to the market** (binary → CTF Exchange V2; neg-risk →
+  Neg Risk CTF Exchange V2 + Neg Risk Adapter), for both pUSD allowance and CTF
+  operator. The official ts-sdk additionally approves the collateral adapters
+  (split/merge/redeem) and router/Exchange-V3 (forward-compat); they're one-line
+  additions to the venue list in `requiredApprovals`.
 - The fixed market resolves 2026-06-30; after that the constant needs replacing.
 - `MIN_USABLE_ALLOWANCE` treats a finite-but-tiny allowance as missing and
   re-approves to max — simple, but a user who deliberately set a small allowance

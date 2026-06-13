@@ -1,26 +1,27 @@
-import { maxUint256, type Address } from 'viem';
+import { encodeFunctionData, maxUint256, type Address, type Hex } from 'viem';
 import { PUSD } from './chains';
+import { CONDITIONAL_TOKENS_ABI, ERC20_ABI } from './erc20';
 
 /**
  * Polymarket V2 trade-readiness requirements on Polygon.
  *
  * Two kinds of approvals gate trading:
- *  1. ERC-20 allowance: exchange contracts pull pUSD collateral via
- *     `transferFrom`, so each needs a pUSD allowance.
- *  2. ERC-1155 operator approval: exchange contracts move outcome tokens
- *     held in the ConditionalTokens contract, so each needs
- *     `setApprovalForAll`.
+ *  1. ERC-20 allowance: the exchange pulls pUSD collateral via `transferFrom`,
+ *     so it needs a pUSD allowance.
+ *  2. ERC-1155 operator approval: the exchange moves outcome tokens held in
+ *     the ConditionalTokens contract, so it needs `setApprovalForAll`.
  *
- * Addresses are the V2 (post April 2026 pUSD upgrade) deployments from
- * https://docs.polymarket.com/resources/contracts. The set below is the
- * trading trio — enough for binary and neg-risk CLOB markets. The official
- * ts-sdk additionally approves the collateral adapters (split/merge/redeem
- * flows), the Protocol V2 Router, and Exchange V3 (forward-compat); add them
- * to these lists to match it 1:1 — everything downstream is config-driven.
+ * Crucially, *which* contracts are required depends on the market: a binary
+ * (non neg-risk) market trades on the CTF Exchange alone, while a neg-risk
+ * market trades on the Neg Risk Exchange + Adapter. We therefore only ask the
+ * user to approve what the selected market actually needs — a fresh wallet
+ * on the fixed binary market needs 2 approvals, not the full 6. Addresses are
+ * the V2 (post April 2026 pUSD upgrade) deployments and live in this file as
+ * config.
  */
 
 export interface SpenderRequirement {
-  /** Display name, e.g. "CTF Exchange". */
+  /** Display name, e.g. "CTF Exchange V2". */
   name: string;
   address: Address;
 }
@@ -29,15 +30,40 @@ export interface SpenderRequirement {
 export const CONDITIONAL_TOKENS: Address =
   '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
 
-/** Contracts that must hold a pUSD allowance from the trader. */
-export const PUSD_SPENDERS: SpenderRequirement[] = [
-  { name: 'CTF Exchange V2', address: '0xE111180000d2663C0091e4f400237545B87B996B' },
-  { name: 'Neg Risk CTF Exchange V2', address: '0xe2222d279d744050d28e00520010520000310F59' },
-  { name: 'Neg Risk Adapter', address: '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296' },
-];
+export const CTF_EXCHANGE_V2: SpenderRequirement = {
+  name: 'CTF Exchange V2',
+  address: '0xE111180000d2663C0091e4f400237545B87B996B',
+};
+export const NEG_RISK_CTF_EXCHANGE_V2: SpenderRequirement = {
+  name: 'Neg Risk CTF Exchange V2',
+  address: '0xe2222d279d744050d28e00520010520000310F59',
+};
+export const NEG_RISK_ADAPTER: SpenderRequirement = {
+  name: 'Neg Risk Adapter',
+  address: '0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296',
+};
 
-/** Contracts that must be ERC-1155 operators on ConditionalTokens. */
-export const CTF_OPERATORS: SpenderRequirement[] = PUSD_SPENDERS;
+export interface ApprovalRequirements {
+  /** Contracts that must hold a pUSD allowance from the trader. */
+  pusdSpenders: SpenderRequirement[];
+  /** Contracts that must be ERC-1155 operators on ConditionalTokens. */
+  ctfOperators: SpenderRequirement[];
+}
+
+/**
+ * The exact approval set a market needs. Binary markets settle on the CTF
+ * Exchange; neg-risk markets settle on the Neg Risk Exchange and use the
+ * Neg Risk Adapter for conversions. Both pUSD allowance and CTF operator
+ * approval target the same venue(s).
+ */
+export function requiredApprovals(market: {
+  negRisk: boolean;
+}): ApprovalRequirements {
+  const venues = market.negRisk
+    ? [NEG_RISK_CTF_EXCHANGE_V2, NEG_RISK_ADAPTER]
+    : [CTF_EXCHANGE_V2];
+  return { pusdSpenders: venues, ctfOperators: venues };
+}
 
 /**
  * Allowance below this is treated as "needs approval". We approve unlimited
@@ -111,4 +137,30 @@ export function computeApprovalPlan(state: ReadinessState): ApprovalAction[] {
 
 export function isReady(state: ReadinessState): boolean {
   return computeApprovalPlan(state).length === 0;
+}
+
+/**
+ * Encode an approval action as a raw `{ to, data }` call. Used to bundle the
+ * whole plan into a single EIP-5792 `wallet_sendCalls` (one wallet prompt)
+ * with a sequential fallback. Pure, so the encoding is unit-tested.
+ */
+export function approvalToCall(action: ApprovalAction): { to: Address; data: Hex } {
+  if (action.kind === 'erc20-approve') {
+    return {
+      to: action.token,
+      data: encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [action.spender.address, action.amount],
+      }),
+    };
+  }
+  return {
+    to: action.conditionalTokens,
+    data: encodeFunctionData({
+      abi: CONDITIONAL_TOKENS_ABI,
+      functionName: 'setApprovalForAll',
+      args: [action.operator.address, true],
+    }),
+  };
 }

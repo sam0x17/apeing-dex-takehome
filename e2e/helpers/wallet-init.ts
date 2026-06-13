@@ -20,6 +20,7 @@ export function injectTestWallet({
 }: WalletInitArgs) {
   let activeChainId = initialChainId;
   const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
+  const sendCallsStore: Record<string, string[]> = {};
   let rpcId = 0;
 
   async function rpc(method: string, params: unknown[]) {
@@ -75,6 +76,53 @@ export function injectTestWallet({
         }
         case 'wallet_addEthereumChain':
           return null;
+
+        // --- EIP-5792: batch calls in one confirmation. anvil auto-mines,
+        // so we execute the calls sequentially and report them as a bundle.
+        case 'wallet_getCapabilities':
+          return {
+            [`0x${activeChainId.toString(16)}`]: {
+              atomic: { status: 'supported' },
+            },
+          };
+        case 'wallet_sendCalls': {
+          const req = params?.[0] as {
+            from: string;
+            calls: { to: string; data?: string; value?: string }[];
+          };
+          const hashes: string[] = [];
+          for (const call of req.calls) {
+            const hash = (await rpc('eth_sendTransaction', [
+              {
+                from: req.from,
+                to: call.to,
+                data: call.data,
+                ...(call.value ? { value: call.value } : {}),
+              },
+            ])) as string;
+            hashes.push(hash);
+          }
+          const id = hashes[0];
+          sendCallsStore[id] = hashes;
+          return { id };
+        }
+        case 'wallet_getCallsStatus': {
+          const id = params?.[0] as string;
+          const hashes = sendCallsStore[id] ?? [];
+          const receipts = await Promise.all(
+            hashes.map((h) => rpc('eth_getTransactionReceipt', [h])),
+          );
+          const settled = receipts.every((r) => r !== null);
+          return {
+            version: '2.0.0',
+            id,
+            chainId: `0x${activeChainId.toString(16)}`,
+            atomic: true,
+            status: settled ? 200 : 100,
+            receipts: settled ? receipts : [],
+          };
+        }
+
         default:
           return rpc(method, params ?? []);
       }

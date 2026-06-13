@@ -17,7 +17,7 @@ function shortTokenId(id: string): string {
 
 export function TradePanel({ account }: { account?: Address }) {
   const [outcome, setOutcome] = useState<'YES' | 'NO'>('YES');
-  const readiness = useReadiness(account);
+  const readiness = useReadiness(account, FIXED_MARKET);
   const gate = useTokenBalanceGate(account);
   const trade = useTrade(account);
   const tokenId =

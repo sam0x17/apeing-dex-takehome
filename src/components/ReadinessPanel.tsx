@@ -3,10 +3,11 @@
 import type { Address } from 'viem';
 import { useReadiness } from '@/hooks/useReadiness';
 import { MIN_USABLE_ALLOWANCE } from '@/lib/approvals';
+import { FIXED_MARKET } from '@/lib/polymarket';
 import { Button, Dot, ErrorNote, Panel } from './ui';
 
 export function ReadinessPanel({ account }: { account?: Address }) {
-  const readiness = useReadiness(account);
+  const readiness = useReadiness(account, FIXED_MARKET);
 
   return (
     <Panel step={3} title="Trade readiness — Polymarket V2 approvals">

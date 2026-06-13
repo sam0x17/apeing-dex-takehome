@@ -3,12 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Address } from 'viem';
 import {
+  approvalToCall,
   computeApprovalPlan,
   CONDITIONAL_TOKENS,
-  CTF_OPERATORS,
   isReady,
-  PUSD_SPENDERS,
-  type ApprovalAction,
+  requiredApprovals,
   type ReadinessState,
 } from '@/lib/approvals';
 import { POLYGON_CHAIN_ID, PUSD } from '@/lib/chains';
@@ -17,20 +16,28 @@ import { getPolygonPublicClient, switchChain } from '@/lib/wallet';
 
 const READINESS_QUERY_KEY = 'trade-readiness';
 
-/** One multicall round-trip for all allowances + operator approvals. */
-async function fetchReadinessState(owner: Address): Promise<ReadinessState> {
+interface Market {
+  negRisk: boolean;
+}
+
+/** One multicall round-trip for the market's allowances + operator approvals. */
+async function fetchReadinessState(
+  owner: Address,
+  market: Market,
+): Promise<ReadinessState> {
+  const { pusdSpenders, ctfOperators } = requiredApprovals(market);
   const client = getPolygonPublicClient();
 
   const results = await client.multicall({
     allowFailure: false,
     contracts: [
-      ...PUSD_SPENDERS.map((spender) => ({
+      ...pusdSpenders.map((spender) => ({
         address: PUSD,
         abi: ERC20_ABI,
         functionName: 'allowance' as const,
         args: [owner, spender.address] as const,
       })),
-      ...CTF_OPERATORS.map((operator) => ({
+      ...ctfOperators.map((operator) => ({
         address: CONDITIONAL_TOKENS,
         abi: CONDITIONAL_TOKENS_ABI,
         functionName: 'isApprovedForAll' as const,
@@ -40,24 +47,24 @@ async function fetchReadinessState(owner: Address): Promise<ReadinessState> {
   });
 
   return {
-    allowances: PUSD_SPENDERS.map((spender, i) => ({
+    allowances: pusdSpenders.map((spender, i) => ({
       spender,
       allowance: results[i] as bigint,
     })),
-    operators: CTF_OPERATORS.map((operator, i) => ({
+    operators: ctfOperators.map((operator, i) => ({
       operator,
-      approved: results[PUSD_SPENDERS.length + i] as boolean,
+      approved: results[pusdSpenders.length + i] as boolean,
     })),
   };
 }
 
-export function useReadiness(owner?: Address) {
+export function useReadiness(owner: Address | undefined, market: Market) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: [READINESS_QUERY_KEY, owner],
+    queryKey: [READINESS_QUERY_KEY, owner, market.negRisk],
     enabled: !!owner,
-    queryFn: () => fetchReadinessState(owner!),
+    queryFn: () => fetchReadinessState(owner!, market),
   });
 
   const approveMutation = useMutation({
@@ -66,19 +73,26 @@ export function useReadiness(owner?: Address) {
 
       // Recompute from fresh chain state so we never re-submit an approval
       // that landed in the meantime (idempotence across tabs/sessions).
-      const state = await fetchReadinessState(owner);
+      const state = await fetchReadinessState(owner, market);
       const plan = computeApprovalPlan(state);
       if (plan.length === 0) return;
 
       const walletClient = await switchChain(POLYGON_CHAIN_ID);
-      const publicClient = getPolygonPublicClient();
 
-      // Sequential on purpose: one wallet prompt at a time, and a receipt
-      // wait between txs avoids nonce races in MetaMask.
-      for (const action of plan) {
-        const hash = await submitApproval(walletClient, owner, action);
-        await publicClient.waitForTransactionReceipt({ hash });
-      }
+      // Submit every missing approval as one EIP-5792 batch — a single
+      // wallet confirmation when supported. experimental_fallback degrades
+      // to sequential eth_sendTransaction on wallets without EIP-5792.
+      const { id } = await walletClient.sendCalls({
+        account: owner,
+        calls: plan.map(approvalToCall),
+        experimental_fallback: true,
+        experimental_fallbackDelay: 100,
+      });
+      await walletClient.waitForCallsStatus({
+        id,
+        timeout: 120_000,
+        throwOnFailure: true,
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [READINESS_QUERY_KEY] });
@@ -95,31 +109,4 @@ export function useReadiness(owner?: Address) {
     approve: approveMutation.mutate,
     approving: approveMutation.isPending,
   };
-}
-
-type PolygonWalletClient = Awaited<ReturnType<typeof switchChain>>;
-
-function submitApproval(
-  walletClient: PolygonWalletClient,
-  owner: Address,
-  action: ApprovalAction,
-): Promise<`0x${string}`> {
-  if (action.kind === 'erc20-approve') {
-    return walletClient.writeContract({
-      chain: null,
-      account: owner,
-      address: action.token,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [action.spender.address, action.amount],
-    });
-  }
-  return walletClient.writeContract({
-    chain: null,
-    account: owner,
-    address: action.conditionalTokens,
-    abi: CONDITIONAL_TOKENS_ABI,
-    functionName: 'setApprovalForAll',
-    args: [action.operator.address, true],
-  });
 }
